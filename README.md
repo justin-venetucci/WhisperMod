@@ -99,8 +99,15 @@ To run this bot yourself:
 
 1.  Clone the repository
 2.  Configure your `.env` file with your API keys
+    - OPENAI_API_KEY
+    - DISCORD_SECRET_KEY
 3.  Install dependencies with `pip install -r requirements.txt`
 4.  Run `python bot.py`
+
+If using Docker:
+
+1.  Build the container using the dockerfile using "`docker build -t <choose an image name> .`"
+2.  Run the container using "`docker run -it -e {env arguments} <image name from above>`"
 
 Privacy and Legal
 ---------------

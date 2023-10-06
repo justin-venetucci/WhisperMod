@@ -1,18 +1,22 @@
-# Import libraries
 import os
 import io
-#import base64
-#import asyncio
 import discord
 import openai
 import pydub
+import asyncio
 from dotenv import load_dotenv
+import logging
+import sys
+
+# Configure logging
+logging.basicConfig(stream=sys.stdout, level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Get environment variables
 load_dotenv()
-openai.api_key = os.getenv('OPENAI_API_KEY')
 
-linebreak = "--------------------------------------------"
+# Set OpenAI API key
+openai.api_key = os.getenv('OPENAI_API_KEY')
 
 # Create Discord client session
 intents = discord.Intents.default()
@@ -22,114 +26,74 @@ client = discord.Client(intents=intents)
 # Print login to console
 @client.event
 async def on_ready():
-    print(f'Logged in as {client.user}')
-    print(linebreak)
+    logger.info(f'Logged in as {client.user}')
 
-#--------------------------------------------------------------------#
-#                       Message Event Handler                        #
-#--------------------------------------------------------------------#
-
-# When a message is sent in a server that the bot is in
+# Message Event Handler
 @client.event
 async def on_message(message):
-    # Prevent the bot from responding to its own messages
     if message.author == client.user:  
         return
-    
-    print('Message received')
-    await process_voice_message(message)
-    print(linebreak)
+    logger.debug('Message received')
+    await asyncio.create_task(process_voice_message(message))
 
-#--------------------------------------------------------------------#
-#                            Main Function                           #
-#--------------------------------------------------------------------#
-
+# Main Function
 async def process_voice_message(message):
-    # Check if the message has attachments
-    if not message.attachments:
-        # The message does not have attachments
-        print("Message does not have attachment, ignoring")
+    # Catch if not voice message
+    if not message.attachments or not message.attachments[0].is_voice_message():
+        logger.debug('Message is not voice message, ignoring')
         return
     
-    # The message has attachments
-    print("Message has attachment")
+    # If voice message
+    logger.info('----------------------')
+    logger.info('Voice message received')
 
-    # Retrieve the first message attachment
-    attachment = message.attachments[0]
-
-    # Check if attachment is voice message
-    if not attachment.is_voice_message():
-        # The message is not a voice message
-        print('Attachment is not a voice message, ignoring')
-        return
-
-    # The attachment is a voice message
-    print('Attachment is a voice message, getting content')
-
-    # Get the voice message attachment
-    audio_bytes_ogg = await attachment.read()
-    print('Audio bytes gotten successfully')
+    # Set attachment
+    attachment_url = message.attachments[0]
+    logger.debug(f'Voice file link: {attachment_url}')
     
-    # Convert the ogg bytes to wav bytes
-    audio_bytes_wav = pydub.AudioSegment.from_ogg(io.BytesIO(audio_bytes_ogg))
-    print("Audio bytes converted to wav")
+    # Define file names
+    filename = f'voice_message_{message.id}'
+    filename_ogg = f'{filename}.ogg'
+    filename_mp3 = f'{filename}.mp3'
 
-    # Create new wav file with wav bytes
-    wav_file_path = "audio.wav"
+    # Get attachment content, save to buffer
+    buffer_ogg = io.BytesIO(await attachment_url.read())
+    buffer_ogg.name = filename_ogg
+    logger.debug('Attachment content captured to buffer')
 
-    audio_bytes_wav.export(wav_file_path, format="wav")
-    print("Wav file created")
+    # Create PyDub AudioSegment from attachment
+    audio_segment = pydub.AudioSegment.from_ogg(buffer_ogg)
+    logger.debug('Audio segment created')
+    
+    # Create empty buffer to export AudioSegment to
+    buffer_mp3 = io.BytesIO()
+    buffer_mp3.name = filename_mp3 # for OpenAI
+    logger.debug('Empty buffer created for mp3')
 
-    #-----------------------------------#
-    #     Call Supporting Functions     #
-    #-----------------------------------#
+    # Export AudioSegment to buffer
+    audio_segment.export(buffer_mp3, format="mp3")
+    logger.debug('Segment converted to mp3')
 
-    # Transcribe the voice message
-    transcript = await transcribe_voice_message(wav_file_path)
-    print("Wav file transcribed")
+    # Transcribe file with Whisper
+    transcript = openai.Audio.transcribe("whisper-1", buffer_mp3)['text']
+    #transcript = transcript_response['text']
+    logger.debug('Voice message transcribed')
 
-    # Delete wav file
-    os.remove(wav_file_path)
-    print("Wav file deleted")
+    # Log transcript
+    logger.info(f'Transcript: {transcript}')
 
-    # Print transcription
-    print("----------------------")
-    print(f"Transcript: {transcript}")
-    print("-----------")
+    # Pass to moderation model
+    mod_response = openai.Moderation.create(input=transcript)
+    logger.debug(mod_response)
 
-    # Perform content check on the transcript
-    is_flagged = await content_check(transcript)
-    print(f"Is Flagged: {is_flagged}")
-    print("----------------------")
-    # Take moderation actions if needed
+    # Select flagged status only
+    is_flagged = mod_response['results'][0]['flagged']
+    logger.info(f'Is Flagged: {is_flagged}')
+
     if is_flagged:
-        await moderate_message(message)
-
-#--------------------------------------------------------------------#
-#                        Supporting Functions                        #
-#--------------------------------------------------------------------#
-
-async def transcribe_voice_message(file_path):
-    """Passes a file path to OpenAI's Whisper model for transcription.\n
-    Target file must be of type mp3, mp4, mpeg, mpga, m4a, wav, or webm"""
-
-    transcript = openai.Audio.transcribe("whisper-1", open(file_path, "rb"))
-    return transcript['text']
-
-async def content_check(text):
-    """Returns a boolean value of whether a given input violates OpenAI's content policy"""
-    
-    response = openai.Moderation.create(
-    input = text
-    )
-    is_flagged = response["results"][0]["flagged"]
-    return is_flagged
-
-async def moderate_message(message):
-        """Deletes a message. Will do more later."""
         await message.delete()
-        print("**Message deleted**")
-        await message.channel.send(f"Be nice, {message.author.mention}")
+        logger.info('Message deleted')
+        await message.channel.send(f'I removed that voice message for containing offensive content. Be nice, {message.author.mention}')
 
 # Run the script
 client.run(os.getenv('DISCORD_SECRET_KEY'))

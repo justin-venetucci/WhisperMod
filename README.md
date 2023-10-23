@@ -1,26 +1,16 @@
 WhisperMod: Discord Voice Message Moderator
 ======================
 
-About
+Functionality
 -----
 
 This bot listens for audio messages sent in a Discord server's text channels. When it detects an audio message, it:
 
-1.  Downloads the audio file attachment
+1.  Writes the audio file attachment to a memory stream
 2.  Converts from OGG to WAV format (required by OpenAI)
-3.  Sends the WAV file to OpenAI's Whisper API to transcribe to text
-4.  Checks the text transcription using OpenAI's Content Moderation API
-5.  Deletes the message if it violates content policy
-
-I built this bot from scratch without using any boilerplate code or templates :)
-
-Environment Setup
------------------
-
-*   Created and activated a virtual environment
-*   Installed required libraries like Discord, OpenAI, and Pydub
-*   Got API keys for OpenAI and Discord
-*   Configured environment variables for semi-secure key management
+3.  Sends the WAV-converted stream to OpenAI's Whisper API for transcription
+4.  Checks the text transcription for appropriateness using OpenAI's Content Moderation API
+5.  Deletes the message and warns the user if it violates content policy
 
 Technical Approach
 ------------------
@@ -30,11 +20,10 @@ Technical Approach
 *   Manipulated audio files using ffmpeg and pydub
 *   Made API calls to OpenAI's Whisper and Content Moderation APIs
 *   Developed custom functions for transcribing, content checking, and moderating
-*   Followed best practices like environmnt variables and removing temporary files
 
 ### Architecture
 
-The bot follows an event-driven architecture using Discord's API. The main entry point is the `on_message` event handler which detects new messages. This passes the message to the `process_voice_message` function to handle audio files. Supporting functions like `transcribe_voice_message` and `content_check` make the OpenAI API calls.
+The bot follows an event-driven architecture using Discord's API. The main entry point is the `on_message` event handler which detects new messages. This passes the message to the `process_voice_message` function to handle audio files. Supporting functions like `transcribe_voice_message` and `content_check` make the OpenAI API calls. `process_voice_message` uses `asyncio.create_task()` so it can process messages concurrently.
 
 ### Code Snippets
 
@@ -76,6 +65,7 @@ Challenges
 *   Passing audio files to OpenAI's API correctly
     * Creating and opening files
     * Working with io and asyncio
+    * Migrating to bytesio
 *   Handling errors and edge cases with audio messages
     * Settled on just console printing as the program runs to track failure points
 *   Deleting messages and notifying users of violations
@@ -89,8 +79,6 @@ Future Work
 *   Expanding moderation capabilities beyond audio messages
 *   Using OpenAI's Chat Completion endpoint to provide more qualitative message analysis
     * Could be used to provide a more hollistic review of a message when combined with the quantitative Moderations AI
-*   Get it working on an EC2 instance or in ﾟ✧. *containers* .✧ﾟ (is joke)
-*   Storing keys in a key management system like Azure Key Vault (yes I know I just mixed AWS and Azure)
 
 Running the Bot
 ---------------
@@ -108,6 +96,23 @@ If using Docker:
 
 1.  Build the container using the dockerfile using "`docker build -t <choose an image name> .`"
 2.  Run the container using "`docker run -it -e {env arguments} <image name from above>`"
+
+If using GitHub Actions to push to Azure Container Instances:
+- Read the following article for context:
+  - [Configure a GitHub Action to create a container instance](https://learn.microsoft.com/en-us/azure/container-instances/container-instances-github-action?tabs=userlevel)
+
+- You'll need some repository secrets set up:
+  - AZURE_CREDENTIALS
+  - REGISTRY_LOGIN_SERVER
+  - REGISTRY_USERNAME
+  - REGISTRY_PASSWORD
+  - RESOURCE_GROUP
+  - OPENAI_API_KEY
+  - DISCORD_SECRET_KEY
+  - LOG_ANALYTICS_WORKSPACE_ID
+  - LOG_ANALYTICS_WORKSPACE_KEY
+ 
+- Note that my workflows/main.yml is based on [Azure's ACI Deploy sample](https://github.com/Azure/aci-deploy)
 
 Privacy and Legal
 ---------------
